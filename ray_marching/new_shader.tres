@@ -1,0 +1,146 @@
+[gd_resource type="Shader" format=2]
+
+[resource]
+code = "shader_type spatial;
+render_mode unshaded;
+
+uniform bool enable_shadows;
+varying mat4 cam;
+varying vec3 cam_pos;
+uniform float Power = 4.0;
+uniform float Bailout = 1.0;
+uniform int Iterations = 5;
+uniform vec3 light_normal = vec3(0.7,0.8,0.4);
+uniform vec4 color : hint_color;
+uniform vec4 ambient_color : hint_color;
+uniform float smoothness;
+uniform vec4 specularColor : hint_color;
+uniform sampler2D color_grad;
+uniform float color_grad_scale;
+
+float mandel_bulb(vec3 pos) {
+	vec3 z = pos;
+	float dr = 1.0;
+	float r = 0.0;
+	for (int i = 0; i < Iterations ; i++) {
+		r = length(z);
+		if (r>Bailout) break;
+		// convert to polar coordinates
+		float theta = acos(z.z/r);
+		float phi = atan(z.y,z.x);
+		dr =  pow( r, Power-1.0)*Power*dr + 1.0;
+		// scale and rotate the point
+		float zr = pow( r,Power);
+		theta = theta*Power;
+		phi = phi*Power;
+		
+	// convert back to cartesian coordinates
+		z = zr*vec3(sin(theta)*cos(phi), sin(phi)*sin(theta), cos(theta));
+		z+=pos;
+		}
+	return 0.5*log(r)*r/dr;
+}
+
+float sphere(vec3 p,float r){
+return length(p)-r;
+}
+
+float sdBox( vec3 p, vec3 b )
+{
+vec3 q = abs(p) - b;
+return length(max(q,0.0)) + min(max(q.x,max(q.y,q.z)),0.0);
+}
+
+float random(vec3 p){
+	return p.x*sin(p.y*p.y)/(pow(p.z,p.x*p.y));
+}
+float smin( float a, float b, float k )
+{
+    float h = clamp( 0.5+0.5*(b-a)/k, 0.0, 1.0 );
+    return mix( b, a, h ) - k*h*(1.0-h);
+}
+float map(vec3 p){
+	return min(sphere(p,10.0),sdBox(p-vec3(0.0,-30,0.0),vec3(50.0,10.0,60.0)));
+}
+vec3 calculate_normal(in vec3 p)
+{
+const vec3 small_step = vec3(0.001, 0.0, 0.0);
+
+float gradient_x = map(p + small_step.xyy) - map(p - small_step.xyy);
+float gradient_y = map(p + small_step.yxy) - map(p - small_step.yxy);
+float gradient_z = map(p + small_step.yyx) - map(p - small_step.yyx);
+
+vec3 normal = vec3(gradient_x, gradient_y, gradient_z);
+
+return normalize(normal);
+}
+
+vec3 ray_march(vec3 pos,vec3 view_vec){
+float mint = 0.1;
+float maxt = 10000.0;
+float t = mint;
+float steps = 0.0;
+while(t < maxt)
+{
+steps += 1.0;
+float h = map(pos + view_vec*t);
+if( h<0.001 )
+return vec3(0.0,t,steps);
+t += h;
+}
+return vec3(1.0,t,steps);
+}
+
+
+vec3 smooth_shade_march(vec3 pos,vec3 view_vec){
+float mint = 0.1;
+float maxt = 10000.0;
+float t = mint;
+float steps = 0.0;
+float min_d = 100.0;
+while(t < maxt)
+{
+steps += 1.0;
+float h = map(pos + view_vec*t);
+if( h<0.001 )
+return vec3(1.0,t,steps);
+min_d = min(min_d,20.0*h/t);
+t += h;
+}
+return vec3(1.0/min_d,t,steps);
+}
+
+
+void fragment(){
+	ALBEDO = vec3(1.0);
+	ALPHA = 1.0;
+	float depth = texture(DEPTH_TEXTURE, SCREEN_UV).x;
+	vec3 ndc = vec3(SCREEN_UV, depth) * 2.0 - 1.0;
+	vec4 view = INV_PROJECTION_MATRIX * vec4(ndc, 1.0);
+	view.xyz /= view.w;
+	float linear_depth = -view.z;
+	vec3 my_view = (cam*vec4(view.xyz,0)).xyz;
+	vec3 hit = ray_march(cam_pos,(cam*vec4(view.xyz,0)).xyz);
+	vec3 hit_vec = cam_pos+my_view*hit.y;
+	vec3 normal = calculate_normal(hit_vec);
+	
+	vec3 col = texture(color_grad,vec2(length(hit_vec)*color_grad_scale,0)).xyz; 
+	
+	float ambient_oclusion = 50.0/hit.z;
+	
+	float specularAngle = acos(dot(normalize(light_normal - normalize(my_view)), normal));
+	float specularExponent = specularAngle / (1.0 - smoothness);
+	float specularHighlight = exp(-specularExponent * specularExponent);
+	float shadow =smooth_shade_march(hit_vec,light_normal).x;
+	ALBEDO = col.xyz * vec3(dot(normal,light_normal));
+	ALBEDO -= shadow;
+	if (shadow < 0.1) shadow = 0.0;
+	ALBEDO = max(ALBEDO,ambient_color.xyz*col.xyz*ambient_oclusion) + max(vec3(0.0),specularHighlight*specularColor.xyz-shadow);
+	ALPHA = 1.0 - ray_march(cam_pos,my_view).x;
+	
+}
+
+void vertex() {
+	cam = CAMERA_MATRIX;
+	cam_pos = (CAMERA_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+}"
