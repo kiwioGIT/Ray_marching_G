@@ -4,42 +4,93 @@
 code = "shader_type spatial;
 render_mode unshaded;
 
+
+uniform float main_color_r;
+uniform float main_color_g;
+uniform float main_color_b;
+
+uniform float main_d_pow_r;
+uniform float main_d_pow_g;
+uniform float main_d_pow_b;
+
+uniform bool use_darkening;
+
+uniform float ambient_oclusion_scale = 300.0;
+uniform float ambient_light_scale = 0.1;
+
+uniform float smoothness = 0.5;
+uniform float specular_strenght = 0.5;
+
 uniform bool enable_shadows;
 varying mat4 cam;
 varying vec3 cam_pos;
-uniform float Power = 4.0;
-uniform float Bailout = 1.0;
-uniform int Iterations = 5;
-uniform vec3 light_normal = vec3(0.7,0.8,0.4);
+uniform float Power = 8.0;
+uniform float Bailout = 5.0;
+uniform int Iterations = 1;
+uniform vec3 light_normal = vec3(1.0,0.5,0.0);
 uniform vec4 color : hint_color;
 uniform vec4 ambient_color : hint_color;
-uniform float smoothness;
+
 uniform vec4 specularColor : hint_color;
 uniform sampler2D color_grad;
 uniform float color_grad_scale;
+uniform int max_mirror_iterations = 3;
+uniform vec4 sky_color : hint_color;
+uniform vec3 obj1_pos = vec3(0.0);
+
+uniform float precision = 1;
+uniform float shadow_precision = 1;
+
+vec4 mandel_bulb_new(vec3 pos){
+	vec3 w  = pos;
+	float m = dot(w,w);
+	
+	vec4 trap = vec4(abs(w),m);
+	float dz = 1.0;
+	
+	for (int i = 0; i < Iterations;i++) {
+		dz = 8.0*pow(m,3.5)*dz + 1.0;
+		float r = length(w);
+		float b = 8.0*acos(w.y/r);
+		float a = 8.0*atan(w.x , w.z);
+		w = pos + pow(r,8.0) * vec3( sin(b)*sin(a), cos(b), sin(b)*cos(a));
+		
+		m = dot(w,w);
+		if ( m > 256.0){
+			break;
+		}
+		
+		trap = min(trap,vec4(abs(w),m));
+	}
+	
+	if (!use_darkening){trap.w = 1.0;}
+	
+	return vec4(0.25*log(m)*sqrt(m)/dz,pow(trap.w,main_d_pow_r)*main_color_r,pow(trap.w,main_d_pow_g)*main_color_g,pow(trap.w,main_d_pow_b)*main_color_b);
+}
 
 float mandel_bulb(vec3 pos) {
 	vec3 z = pos;
 	float dr = 1.0;
-	float r = 0.0;
+ 	float r = 0.0;
 	for (int i = 0; i < Iterations ; i++) {
-		r = length(z);
+		 r = length(z);
 		if (r>Bailout) break;
 		// convert to polar coordinates
 		float theta = acos(z.z/r);
 		float phi = atan(z.y,z.x);
 		dr =  pow( r, Power-1.0)*Power*dr + 1.0;
-		// scale and rotate the point
+   		// scale and rotate the point
 		float zr = pow( r,Power);
-		theta = theta*Power;
-		phi = phi*Power;
-		
-	// convert back to cartesian coordinates
-		z = zr*vec3(sin(theta)*cos(phi), sin(phi)*sin(theta), cos(theta));
-		z+=pos;
-		}
-	return 0.5*log(r)*r/dr;
-}
+                     theta = theta*Power;
+                     phi = phi*Power;
+    
+             // convert back to cartesian coordinates
+                     z = zr*vec3(sin(theta)*cos(phi), sin(phi)*sin(theta), cos(theta));
+                     z+=pos;
+                     }
+             return 0.5*log(r)*r/dr;
+     }
+    
 
 float sphere(vec3 p,float r){
 return length(p)-r;
@@ -59,39 +110,83 @@ float smin( float a, float b, float k )
     float h = clamp( 0.5+0.5*(b-a)/k, 0.0, 1.0 );
     return mix( b, a, h ) - k*h*(1.0-h);
 }
-float map(vec3 p){
-	return min(sphere(p,10.0),sdBox(p-vec3(0.0,-30,0.0),vec3(50.0,10.0,60.0)));
+    
+mat4 vec_minx(mat4 p,mat4 p2){
+   if (p[0].x > p2[0].x) return p2;
+     return p;
 }
+
+mat4 vec_sminx(mat4 p,mat4 p2,float k){
+	mat4 fin;
+	float a = p[0].x;
+	float b = p2[0].x;
+	float h = clamp( 0.5+0.5*(b-a)/k, 0.0, 1.0 );
+	fin[0].x = mix( b, a, h ) - k*h*(1.0-h);
+	fin[0].yzw = mix(p2[0].yzw,p[0].yzw,h);
+	fin[1].xyz = mix(p2[1].xyz,p[1].xyz,h);
+	return fin;
+}
+
+float infinite_tetrahedron(vec3 z,float Scale,float Offset)
+{
+    float r;
+    int n = 0;
+    while (n < Iterations) {
+       if(z.x+z.y<0.0) z.xy = -z.yx; // fold 1
+       if(z.x+z.z<0.0) z.xz = -z.zx; // fold 2
+       if(z.y+z.z<0.0) z.zy = -z.yz; // fold 3	
+       z = z*Scale - Offset*(Scale-1.0);
+       n++;
+    }
+    return (length(z) ) * pow(Scale, -float(n));
+}
+
+mat4 map(vec3 p){ /*vec4(mandel_bulb(p/5.0),1.0,0.5,0.5);*/
+	/*STRUCTURE 0 -> DISTANCE , Color r, Color r , Color b
+				1 -> Smoothness , Speculat Strenght , Miror Fraction, */
+	vec4 bulb = mandel_bulb_new(p);
+	return mat4(vec4(bulb.x,bulb.y,bulb.z,bulb.w),vec4(smoothness,specular_strenght,0.0,0.0),vec4(0.0),vec4(0.0));
+	//return vec_sminx(mat4(vec4(sphere(p+obj1_pos,20.0),1.0,0.0,0.0),vec4(0.7,0.5,0.0,0.0),vec4(0.0),vec4(0.0)),
+	//mat4(vec4(sdBox(p-vec3(0.0,-20.0,0.0),vec3(40.0,5.0,40.0)),0.0,1.0,0.0),vec4(0.7,0.5,0.0,0.0),vec4(0.0),vec4(0.0)),
+	//20.0);
+	//p.x = mod(p.x,10.0)-5.0;
+	//p.z = mod(p.z,10.0)-5.0;
+	//return vec_minx(mat4(vec4(mandel_bulb(p/2.0+obj1_pos),1.0,0.0,0.0),vec4(0.7,0.5,0.0,0.0),vec4(0.0),vec4(0.0))//mat4(vec4(infinite_tetrahedron(p,2.0,5.0),1.0,0.0,0.0),vec4(0.7,0.5,0.0,0.0),vec4(0.0),vec4(0.0))
+	//,mat4(vec4(sdBox(p-vec3(0.0,-20.0,0.0),vec3(40.0,5.0,40.0)),0.0,1.0,0.0),vec4(0.7,0.5,0.0,0.0),vec4(0.0),vec4(0.0)));
+}
+
+
 vec3 calculate_normal(in vec3 p)
 {
 const vec3 small_step = vec3(0.001, 0.0, 0.0);
 
-float gradient_x = map(p + small_step.xyy) - map(p - small_step.xyy);
-float gradient_y = map(p + small_step.yxy) - map(p - small_step.yxy);
-float gradient_z = map(p + small_step.yyx) - map(p - small_step.yyx);
+float gradient_x = map(p + small_step.xyy)[0].x - map(p - small_step.xyy)[0].x;
+float gradient_y = map(p + small_step.yxy)[0].x - map(p - small_step.yxy)[0].x;
+float gradient_z = map(p + small_step.yyx)[0].x - map(p - small_step.yyx)[0].x;
 
 vec3 normal = vec3(gradient_x, gradient_y, gradient_z);
 
 return normalize(normal);
 }
-
-vec3 ray_march(vec3 pos,vec3 view_vec){
-float mint = 0.1;
-float maxt = 10000.0;
-float t = mint;
-float steps = 0.0;
-while(t < maxt)
-{
-steps += 1.0;
-float h = map(pos + view_vec*t);
-if( h<0.001 )
-return vec3(0.0,t,steps);
-t += h;
+  
+mat3 ray_march(vec3 pos,vec3 view_vec){
+	float mint = 0.1;
+	float maxt = 10000.0;
+	float t = mint;
+	float steps = 0.0;
+	while(t < maxt)
+	{
+	steps += 1.0;
+	mat4 mat = map(pos + view_vec*t);
+	float h = mat[0].x;
+	if( h<precision * 0.001)
+	return mat3(vec3(0.0,t,steps),mat[0].yzw,mat[1].xyz);
+	t += h;
+	}
+	return mat3(vec3(1.0,t,steps),vec3(0.0),vec3(0.0));
 }
-return vec3(1.0,t,steps);
-}
-
-
+    
+    
 vec3 smooth_shade_march(vec3 pos,vec3 view_vec){
 float mint = 0.1;
 float maxt = 10000.0;
@@ -101,8 +196,8 @@ float min_d = 100.0;
 while(t < maxt)
 {
 steps += 1.0;
-float h = map(pos + view_vec*t);
-if( h<0.001 )
+float h = map(pos + view_vec*t)[0].x;
+if( h<shadow_precision * 0.001 )
 return vec3(1.0,t,steps);
 min_d = min(min_d,20.0*h/t);
 t += h;
@@ -110,8 +205,79 @@ t += h;
 return vec3(1.0/min_d,t,steps);
 }
 
+  void vertex() {
+	cam = CAMERA_MATRIX;
+	cam_pos = (CAMERA_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+	POSITION = vec4(VERTEX, 1.0);
+}
 
-void fragment(){
+mat3 calculate_fckn_everithing(vec3 view,vec3 pos,int iterations){
+	 
+	vec3 albedo_ = sky_color.xyz;
+	float alpha_ = 1.0;
+	
+	mat3 hit = ray_march(pos,view);
+	/*HIT STRUCTURE
+	0 -> HIT, Distance , StepsTaken
+	1 -> Color
+	2 -> Smoothness , Speculat Strenght , Miror Fraction
+	*/
+	if (iterations > max_mirror_iterations) hit[2].z = 0.0;
+	vec3 hit_vec = pos+view*hit[0].y;
+	vec3 normal = calculate_normal(hit_vec);
+	
+	vec3 col = hit[1];//texture(color_grad,vec(length(hit_vec)*color_grad_scale,)).xyz;
+	float ambient_oclusion = ambient_oclusion_scale/hit[0].z;
+	if (ambient_oclusion_scale < 0.0){
+		ambient_oclusion = 1.0;
+	}
+   
+	float specularAngle = acos(dot(normalize(light_normal - normalize(view)), normal));
+	float specularExponent = specularAngle / (1.0 - hit[2].x/*smoothness*/);
+	float specularHighlight = exp(-specularExponent * specularExponent);
+	float shadow = 0.0;
+	if (enable_shadows){
+		shadow =smooth_shade_march(hit_vec,light_normal).x;
+	}
+	vec3 mirrored_albedo = sky_color.xyz;
+	
+	//Here lies idiotic mirror
+	//if (hit[2].z > 0.0){
+	//	mat3 mirror_hit = ray_march(hit_vec,normal);
+	//	if (mirror_hit[0].x == 0.0){
+	//		vec3 mirror_hit_vec = hit_vec+normal*mirror_hit[0].y;
+	//		vec3 mirrot_normal = calculate_normal(mirror_hit_vec);
+	//		mirrored_albedo = mirror_hit[1] * vec3(dot(mirrot_normal,light_normal));
+	//		
+	//		float mirror_shadow = 0.0;
+	//		if (enable_shadows){
+	//			mirror_shadow =smooth_shade_march(mirror_hit_vec,light_normal).x;
+	//		}
+	//		mirrored_albedo -= mirror_shadow;
+	//		mirrored_albedo = max(mirrored_albedo,ambient_color.xyz*mirror_hit[1].xyz*ambient_oclusion) + max(vec3(0.0),specularHighlight*vec3(hit[2].y)-mirror_shadow);
+	//		
+	//	}
+	//}
+	
+	
+	albedo_ = col.xyz;
+	albedo_ -= shadow;
+	albedo_  = albedo_ * max(0.0,dot(normal,normalize(light_normal)));
+	// * mix(max(0.0,dot(normal,light_normal)),1.0,hit[2].z);
+	albedo_ = max(albedo_,ambient_light_scale*ambient_color.xyz*col.xyz*ambient_oclusion) + max(vec3(0.0),specularHighlight*vec3(hit[2].y)-shadow);
+
+	if (hit[0].x == 1.0){
+		albedo_ = sky_color.xyz;
+	}
+	//alpha_ = 1.0 - hit[0].x;
+	
+	return mat3(albedo_,vec3(alpha_,float(iterations),0.0),vec3(0.0));
+}
+
+
+
+ void fragment(){
+	
 	ALBEDO = vec3(1.0);
 	ALPHA = 1.0;
 	float depth = texture(DEPTH_TEXTURE, SCREEN_UV).x;
@@ -120,27 +286,66 @@ void fragment(){
 	view.xyz /= view.w;
 	float linear_depth = -view.z;
 	vec3 my_view = (cam*vec4(view.xyz,0)).xyz;
-	vec3 hit = ray_march(cam_pos,(cam*vec4(view.xyz,0)).xyz);
-	vec3 hit_vec = cam_pos+my_view*hit.y;
+	mat3 c_ = calculate_fckn_everithing(my_view,cam_pos,0);
+	ALBEDO = c_[0];
+	ALPHA = c_[1].x;
+	//OLD STUF
+	
+	/*mat3 hit = ray_march(cam_pos,my_view);*/
+	
+	/*HIT STRUCTURE
+	0 -> HIT, Distance , StepsTaken
+	1 -> Color
+	2 -> Smoothness , Speculat Strenght , Miror Fraction
+	*/
+	
+	/*
+	vec3 hit_vec = cam_pos+my_view*hit[0].y;
 	vec3 normal = calculate_normal(hit_vec);
 	
-	vec3 col = texture(color_grad,vec2(length(hit_vec)*color_grad_scale,0)).xyz; 
-	
-	float ambient_oclusion = 50.0/hit.z;
-	
+	vec3 col = hit[1];//texture(color_grad,vec(length(hit_vec)*color_grad_scale,)).xyz;
+	float ambient_oclusion = 1.0;//50.0/hit[0].z;
+   
 	float specularAngle = acos(dot(normalize(light_normal - normalize(my_view)), normal));
-	float specularExponent = specularAngle / (1.0 - smoothness);
+	float specularExponent = specularAngle / (1.0 - hit[2].x);
 	float specularHighlight = exp(-specularExponent * specularExponent);
-	float shadow =smooth_shade_march(hit_vec,light_normal).x;
-	ALBEDO = col.xyz * vec3(dot(normal,light_normal));
-	ALBEDO -= shadow;
-	if (shadow < 0.1) shadow = 0.0;
-	ALBEDO = max(ALBEDO,ambient_color.xyz*col.xyz*ambient_oclusion) + max(vec3(0.0),specularHighlight*specularColor.xyz-shadow);
-	ALPHA = 1.0 - ray_march(cam_pos,my_view).x;
+	float shadow = 0.0;
+	if (enable_shadows){
+		shadow =smooth_shade_march(hit_vec,light_normal).x;
+	}
+	vec3 mirrored_albedo = vec3(1.0);
+	//Now the idiotic miror
+	/*
+	if (hit[2].z > 0.0){
+		mat3 mirror_hit = ray_march(hit_vec,normal);
+		if (mirror_hit[0].x == 0.0){
+			vec3 mirror_hit_vec = hit_vec+normal*mirror_hit[0].y;
+			vec3 mirrot_normal = calculate_normal(mirror_hit_vec);
+			mirrored_albedo = mirror_hit[1] * vec3(dot(mirrot_normal,light_normal));
+			float mirror_shadow = 0.0;
+			if (enable_shadows){
+				mirror_shadow =smooth_shade_march(mirror_hit_vec,light_normal).x;
+			}
+			mirrored_albedo = max(mirrored_albedo,ambient_color.xyz*mirror_hit[1].xyz*ambient_oclusion) + max(vec3(0.0),specularHighlight*vec3(hit[2].y)-mirror_shadow);
+			
+		}
+	}*/
 	
+	/*
+	ALBEDO = col.xyz;
+	ALBEDO = mix(ALBEDO,mirrored_albedo,hit[2].z);
+	ALBEDO -= shadow*(1.0-hit[2].z);
+	ALBEDO  = ALBEDO  * mix(max(0.0,dot(normal,light_normal)),1.0,hit[2].z);
+	if (hit[2].z == 0.0){
+	
+	ALBEDO = max(ALBEDO,ambient_color.xyz*col.xyz*ambient_oclusion) + max(vec3(0.0),specularHighlight*vec3(hit[2].y)-shadow);
+	}
+	else{
+		ALBEDO = max(ALBEDO,ambient_color.xyz*mix(col.xyz,mirrored_albedo.xyz,hit[2].z)*ambient_oclusion);
+	}
+	ALPHA = 1.0 - hit[0].x;*/
 }
 
-void vertex() {
-	cam = CAMERA_MATRIX;
-	cam_pos = (CAMERA_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-}"
+
+   
+"

@@ -1,0 +1,38 @@
+[gd_resource type="ShaderMaterial" load_steps=4 format=2]
+
+[ext_resource path="res://new_shader.tres" type="Shader" id=1]
+
+[sub_resource type="Gradient" id=3]
+colors = PoolColorArray( 1, 0, 0, 1, 1, 0, 0, 1 )
+
+[sub_resource type="GradientTexture" id=4]
+gradient = SubResource( 3 )
+
+[resource]
+shader = ExtResource( 1 )
+shader_param/main_color_r = 0.3
+shader_param/main_color_g = 1.0
+shader_param/main_color_b = 0.8
+shader_param/main_d_pow_r = 1.0
+shader_param/main_d_pow_g = 2.0
+shader_param/main_d_pow_b = 1.0
+shader_param/use_darkening = true
+shader_param/ambient_oclusion_scale = 300.0
+shader_param/ambient_light_scale = 0.1
+shader_param/smoothness = 0.9
+shader_param/specular_strenght = 0.5
+shader_param/enable_shadows = true
+shader_param/Power = 4.0
+shader_param/Bailout = 2.0
+shader_param/Iterations = 1
+shader_param/light_normal = Vector3( 0.7, 0.734, 0.4 )
+shader_param/color = Color( 1, 0.282353, 0.282353, 1 )
+shader_param/ambient_color = Color( 1, 1, 1, 1 )
+shader_param/specularColor = Color( 0.447059, 0.447059, 0.447059, 1 )
+shader_param/color_grad_scale = 0.283
+shader_param/max_mirror_iterations = 3
+shader_param/sky_color = Color( 0.560784, 0.72549, 0.788235, 1 )
+shader_param/obj1_pos = Vector3( 0, 0, 0 )
+shader_param/precision = 1.0
+shader_param/shadow_precision = 1.0
+shader_param/color_grad = SubResource( 4 )

@@ -1,37 +1,28 @@
 [gd_scene load_steps=6 format=2]
 
-[ext_resource path="res://new_shader.tres" type="Shader" id=1]
+[ext_resource path="res://Spatial.tres" type="Material" id=1]
+[ext_resource path="res://shader_controll.gd" type="Script" id=2]
+[ext_resource path="res://Camera.gd" type="Script" id=3]
+[ext_resource path="res://Control.tscn" type="PackedScene" id=4]
 
-[sub_resource type="CubeMesh" id=1]
-flip_faces = true
-size = Vector3( 5000, 5000, 5000 )
-
-[sub_resource type="Gradient" id=3]
-colors = PoolColorArray( 1, 0, 0, 1, 1, 0, 0, 1 )
-
-[sub_resource type="GradientTexture" id=4]
-gradient = SubResource( 3 )
-
-[sub_resource type="ShaderMaterial" id=2]
-shader = ExtResource( 1 )
-shader_param/enable_shadows = null
-shader_param/Power = 4.0
-shader_param/Bailout = 2.0
-shader_param/Iterations = 5
-shader_param/light_normal = Vector3( 0.7, 0.8, 0.4 )
-shader_param/color = Color( 1, 0.282353, 0.282353, 1 )
-shader_param/ambient_color = Color( 1, 1, 1, 1 )
-shader_param/smoothness = 0.9
-shader_param/specularColor = Color( 0.882353, 0.882353, 0.882353, 1 )
-shader_param/color_grad_scale = 0.283
-shader_param/color_grad = SubResource( 4 )
+[sub_resource type="QuadMesh" id=1]
+size = Vector2( 2, 2 )
 
 [node name="Spatial" type="Spatial"]
+script = ExtResource( 3 )
 
 [node name="Camera" type="Camera" parent="."]
-transform = Transform( 1, 0, 0, 0, 1, 0, 0, 0, 1, 575.12, 1067.5, -99.2443 )
+transform = Transform( 0.611776, 0, 0.791031, 0, 1, 0, -0.791031, 0, 0.611776, 2.38463, -0.0308604, 3.51856 )
+current = true
+fov = 90.0
+far = 8192.0
 
 [node name="MeshInstance" type="MeshInstance" parent="."]
-transform = Transform( 1, 0, 0, 0, 1, 0, 0, 0, 1, -555.206, 0, 0 )
+transform = Transform( 0.610327, 0.000749766, 0.792149, 0.00096282, 0.999998, -0.0016883, -0.792149, 0.00179311, 0.610325, 63.5602, 21.0283, 44.6026 )
+extra_cull_margin = 16384.0
 mesh = SubResource( 1 )
-material/0 = SubResource( 2 )
+skeleton = NodePath("../Camera")
+material/0 = ExtResource( 1 )
+script = ExtResource( 2 )
+
+[node name="Control" parent="." instance=ExtResource( 4 )]
