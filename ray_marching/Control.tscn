@@ -298,7 +298,6 @@ margin_left = 833.0
 margin_top = -99.0
 margin_right = 910.0
 margin_bottom = -83.0
-min_value = 1.0
 max_value = 3.0
 value = 1.0
 
@@ -309,7 +308,6 @@ margin_left = 833.0
 margin_top = -72.0
 margin_right = 910.0
 margin_bottom = -44.0
-min_value = 1.0
 max_value = 3.0
 value = 2.0
 __meta__ = {
@@ -323,7 +321,6 @@ margin_left = 833.0
 margin_top = -30.0
 margin_right = 910.0
 margin_bottom = -14.0
-min_value = 1.0
 max_value = 3.0
 value = 1.0
 

@@ -21,6 +21,8 @@ uniform float ambient_light_scale = 0.1;
 uniform float smoothness = 0.5;
 uniform float specular_strenght = 0.5;
 
+uniform int preset = 0;
+
 uniform bool enable_shadows;
 varying mat4 cam;
 varying vec3 cam_pos;
@@ -40,6 +42,40 @@ uniform vec3 obj1_pos = vec3(0.0);
 
 uniform float precision = 1;
 uniform float shadow_precision = 1;
+
+
+
+vec4 qsqr( vec4 a ) // square a quaterion
+{
+    return vec4( a.x*a.x - a.y*a.y - a.z*a.z - a.w*a.w,
+                 2.0*a.x*a.y,
+                 2.0*a.x*a.z,
+                 2.0*a.x*a.w );
+}
+
+
+void sphereFold(inout vec3 z, inout float dz)
+{
+	float r2 = dot(z,z);
+	if (r2 < 0.5)
+    { 
+		float temp = 2.0;
+		z *= temp;
+		dz*= temp;
+	}
+    else if (r2 < 1.0)
+    { 
+		float temp = 1.0 / r2;
+		z *= temp;
+		dz*= temp;
+	}
+}
+
+void boxFold(inout vec3 z, inout float dz)
+{
+	z = clamp(z, -1.0, 1.0) * 2.0 - z;
+}
+
 
 vec4 mandel_bulb_new(vec3 pos){
 	vec3 w  = pos;
@@ -66,6 +102,31 @@ vec4 mandel_bulb_new(vec3 pos){
 	if (!use_darkening){trap.w = 1.0;}
 	
 	return vec4(0.25*log(m)*sqrt(m)/dz,pow(trap.w,main_d_pow_r)*main_color_r,pow(trap.w,main_d_pow_g)*main_color_g,pow(trap.w,main_d_pow_b)*main_color_b);
+}
+
+float sdJuliabulb(vec3 pos, vec3 c)
+{
+	vec3 orbit = pos;
+    float dz = 1.0;
+    
+    for (int i = 0; i < Iterations; i++) 
+    {
+        float r = length(orbit);
+    	float o = acos(orbit.z/r);
+    	float p = atan(orbit.y/orbit.x);
+        
+        dz = 8.0*r*r*r*r*r*r*r*dz;
+        
+        r = r*r*r*r*r*r*r*r;
+        o = 8.0*o;
+        p = 8.0*p;
+        
+        orbit = vec3(r*sin(o) * cos(p),r*sin(o) * sin(p),r*cos(o)) + c.xyz;
+        
+        if (dot(orbit, orbit) > 4.0) break;
+    }
+    float z = length(orbit);
+    return 0.5*z*log(z)/dz;
 }
 
 float mandel_bulb(vec3 pos) {
@@ -127,6 +188,25 @@ mat4 vec_sminx(mat4 p,mat4 p2,float k){
 	return fin;
 }
 
+float sdJulia(vec3 pos, vec4 c)
+{
+	vec4 z = vec4(pos, 0);
+    float md2 = 1.0;
+    float mz2 = dot(z, z);
+
+    for(int i = 0; i < Iterations; i++)
+    {
+        md2 *= 4.0 * mz2; // dz -> 2·z·dz, meaning |dz| -> 2·|z|·|dz| (can take the 4 out of the loop and do an exp2() afterwards)
+        z = qsqr(z) + c; // z  -> z^2 + c
+
+        mz2 = dot(z,z);
+
+        if(mz2 > 4.0) break;
+    }
+    
+    return 0.25 * sqrt(mz2/md2) * log(mz2);
+}
+
 float infinite_tetrahedron(vec3 z,float Scale,float Offset)
 {
     float r;
@@ -141,11 +221,27 @@ float infinite_tetrahedron(vec3 z,float Scale,float Offset)
     return (length(z) ) * pow(Scale, -float(n));
 }
 
+float mandelbox(vec3 p)
+{
+    float scale = 2.0;
+	vec3 offset = p;
+	float dr = 1.0;
+	for (int n = 0; n < Iterations; n++)
+    {
+		boxFold(p, dr);
+		sphereFold(p, dr);
+        p = scale * p + offset;
+        dr = dr * abs(scale) + 1.0;
+	}
+	float r = length(p);
+	return r / abs(dr);
+}
+
 mat4 map(vec3 p){ /*vec4(mandel_bulb(p/5.0),1.0,0.5,0.5);*/
 	/*STRUCTURE 0 -> DISTANCE , Color r, Color r , Color b
 				1 -> Smoothness , Speculat Strenght , Miror Fraction, */
-	vec4 bulb = mandel_bulb_new(p);
-	return mat4(vec4(bulb.x,bulb.y,bulb.z,bulb.w),vec4(smoothness,specular_strenght,0.0,0.0),vec4(0.0),vec4(0.0));
+	vec4 shape = mandel_bulb_new(p); //sdJulia(p,vec4(0.0,1.0,0.6,0.1))
+	return mat4(vec4(shape.x,shape.y,shape.z,shape.w),vec4(smoothness,specular_strenght,0.0,0.0),vec4(0.0),vec4(0.0));
 	//return vec_sminx(mat4(vec4(sphere(p+obj1_pos,20.0),1.0,0.0,0.0),vec4(0.7,0.5,0.0,0.0),vec4(0.0),vec4(0.0)),
 	//mat4(vec4(sdBox(p-vec3(0.0,-20.0,0.0),vec3(40.0,5.0,40.0)),0.0,1.0,0.0),vec4(0.7,0.5,0.0,0.0),vec4(0.0),vec4(0.0)),
 	//20.0);
@@ -171,7 +267,7 @@ return normalize(normal);
   
 mat3 ray_march(vec3 pos,vec3 view_vec){
 	float mint = 0.1;
-	float maxt = 10000.0;
+	float maxt = 1000.0;
 	float t = mint;
 	float steps = 0.0;
 	while(t < maxt)
@@ -189,7 +285,7 @@ mat3 ray_march(vec3 pos,vec3 view_vec){
     
 vec3 smooth_shade_march(vec3 pos,vec3 view_vec){
 float mint = 0.1;
-float maxt = 10000.0;
+float maxt = 1000.0;
 float t = mint;
 float steps = 0.0;
 float min_d = 100.0;
@@ -267,7 +363,8 @@ mat3 calculate_fckn_everithing(vec3 view,vec3 pos,int iterations){
 	albedo_ = max(albedo_,ambient_light_scale*ambient_color.xyz*col.xyz*ambient_oclusion) + max(vec3(0.0),specularHighlight*vec3(hit[2].y)-shadow);
 
 	if (hit[0].x == 1.0){
-		albedo_ = sky_color.xyz;
+		alpha_ = 0.0;
+		//albedo_ = sky_color.xyz;
 	}
 	//alpha_ = 1.0 - hit[0].x;
 	
