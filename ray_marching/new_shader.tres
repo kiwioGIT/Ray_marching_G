@@ -76,6 +76,9 @@ void boxFold(inout vec3 z, inout float dz)
 	z = clamp(z, -1.0, 1.0) * 2.0 - z;
 }
 
+void planeFold(inout vec3 z, vec3 n, float d) {
+	z.xyz -= 2.0 * min(0.0, dot(z.xyz, n) - d) * n;
+}
 
 vec4 mandel_bulb_new(vec3 pos){
 	vec3 w  = pos;
@@ -221,6 +224,27 @@ float infinite_tetrahedron(vec3 z,float Scale,float Offset)
     return (length(z) ) * pow(Scale, -float(n));
 }
 
+float tethed(vec3 z, float sscal)
+{
+	vec3 a1 = vec3(1,1,1);
+	vec3 a2 = vec3(-1,-1,1);
+	vec3 a3 = vec3(1,-1,-1);
+	vec3 a4 = vec3(-1,1,-1);
+	vec3 c;
+	int n = 0;
+	float dist, d;
+	while (n < Iterations) {
+		 c = a1; dist = length(z-a1);
+	        d = length(z-a2); if (d < dist) { c = a2; dist=d; }
+		 d = length(z-a3); if (d < dist) { c = a3; dist=d; }
+		 d = length(z-a4); if (d < dist) { c = a4; dist=d; }
+		z = sscal*z-c*(sscal-1.0);
+		n++;
+	}
+
+	return length(z) * pow(sscal, float(-n));
+}
+
 float mandelbox(vec3 p)
 {
     float scale = 2.0;
@@ -237,11 +261,24 @@ float mandelbox(vec3 p)
 	return r / abs(dr);
 }
 
+void andy_fold(inout vec3 z,vec3 n1){
+	z-=2.0 * min(0.0, dot(z, n1)) * n1;
+}
+
+float pavel_fract(vec3 p){
+	float val = 1.0;
+	andy_fold(p,vec3(1.0,1.0,1.0));
+	p += vec3(1.0,0.0,0.0);
+	
+	
+	return sphere(p,1.0);
+}
+
 mat4 map(vec3 p){ /*vec4(mandel_bulb(p/5.0),1.0,0.5,0.5);*/
 	/*STRUCTURE 0 -> DISTANCE , Color r, Color r , Color b
 				1 -> Smoothness , Speculat Strenght , Miror Fraction, */
 	vec4 shape = mandel_bulb_new(p); //sdJulia(p,vec4(0.0,1.0,0.6,0.1))
-	return mat4(vec4(shape.x,shape.y,shape.z,shape.w),vec4(smoothness,specular_strenght,0.0,0.0),vec4(0.0),vec4(0.0));
+	return mat4(shape,vec4(smoothness,specular_strenght,0.0,0.0),vec4(0.0),vec4(0.0));
 	//return vec_sminx(mat4(vec4(sphere(p+obj1_pos,20.0),1.0,0.0,0.0),vec4(0.7,0.5,0.0,0.0),vec4(0.0),vec4(0.0)),
 	//mat4(vec4(sdBox(p-vec3(0.0,-20.0,0.0),vec3(40.0,5.0,40.0)),0.0,1.0,0.0),vec4(0.7,0.5,0.0,0.0),vec4(0.0),vec4(0.0)),
 	//20.0);
@@ -304,7 +341,7 @@ return vec3(1.0/min_d,t,steps);
   void vertex() {
 	cam = CAMERA_MATRIX;
 	cam_pos = (CAMERA_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-	POSITION = vec4(VERTEX, 1.0);
+	//POSITION = vec4(VERTEX, 1.0);
 }
 
 mat3 calculate_fckn_everithing(vec3 view,vec3 pos,int iterations){
@@ -361,7 +398,7 @@ mat3 calculate_fckn_everithing(vec3 view,vec3 pos,int iterations){
 	albedo_  = albedo_ * max(0.0,dot(normal,normalize(light_normal)));
 	// * mix(max(0.0,dot(normal,light_normal)),1.0,hit[2].z);
 	albedo_ = max(albedo_,ambient_light_scale*ambient_color.xyz*col.xyz*ambient_oclusion) + max(vec3(0.0),specularHighlight*vec3(hit[2].y)-shadow);
-
+	alpha_ = 1.0;
 	if (hit[0].x == 1.0){
 		alpha_ = 0.0;
 		//albedo_ = sky_color.xyz;
@@ -382,7 +419,7 @@ mat3 calculate_fckn_everithing(vec3 view,vec3 pos,int iterations){
 	vec4 view = INV_PROJECTION_MATRIX * vec4(ndc, 1.0);
 	view.xyz /= view.w;
 	float linear_depth = -view.z;
-	vec3 my_view = (cam*vec4(view.xyz,0)).xyz;
+	vec3 my_view = normalize(cam*vec4(view.xyz,0)).xyz;
 	mat3 c_ = calculate_fckn_everithing(my_view,cam_pos,0);
 	ALBEDO = c_[0];
 	ALPHA = c_[1].x;

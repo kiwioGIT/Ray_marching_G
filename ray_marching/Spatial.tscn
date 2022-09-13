@@ -5,8 +5,9 @@
 [ext_resource path="res://Camera.gd" type="Script" id=3]
 [ext_resource path="res://Control.tscn" type="PackedScene" id=4]
 
-[sub_resource type="QuadMesh" id=1]
-size = Vector2( 2, 2 )
+[sub_resource type="CubeMesh" id=1]
+flip_faces = true
+size = Vector3( 50, 50, 50 )
 
 [node name="Spatial" type="Spatial"]
 script = ExtResource( 3 )
@@ -18,7 +19,6 @@ fov = 90.0
 far = 8192.0
 
 [node name="MeshInstance" type="MeshInstance" parent="."]
-transform = Transform( 0.610327, 0.000749766, 0.792149, 0.00096282, 0.999998, -0.0016883, -0.792149, 0.00179311, 0.610325, 63.5602, 21.0283, 44.6026 )
 extra_cull_margin = 16384.0
 mesh = SubResource( 1 )
 skeleton = NodePath("../Camera")
